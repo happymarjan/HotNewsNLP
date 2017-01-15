@@ -20,6 +20,7 @@ import lda
 import bokeh.plotting as bp
 from bokeh.models import HoverTool
 from bokeh.plotting import show
+import sqlite3
 import logging
 import random
 import collections
@@ -39,8 +40,10 @@ tweetcleaned='tweetcleaned.txt'
 kmeansClustered = 'kmeansClustered.txt'
 clusterFeatures = 'kmeansclusterFeatures.txt'
 tweetsExtracted = 'tweetsExtracted.txt'
+finalTweets = 'finalTweets.txt'
 vecSize = 50
 w2vMdlName ='w2vModel'
+DBName = 'newsDB.db'
 inputCorpus=[]
 numKmeanClusters = 25
 numLDATopics = 25
@@ -215,9 +218,40 @@ def extractTopNews(closestTweetsToCentroid,tfidfDict):
                 print(item) 
                 f.write(str(item))
                 f.write('\n')            
-      
+    
+    getToppestPerCluster(extractedTweetsDictOrdered)
 #--------------------------------------------------------------   
 
+def getToppestPerCluster(extractedTweetsDictOrdered):
+    with open(finalTweets, 'wb') as f:
+        f.write(b"Tweet , Time Created , Number of Retweets")
+        f.write(b'\n\n')
+        for k in extractedTweetsDictOrdered:
+            id,CleansedTweet,avg=extractedTweetsDictOrdered[k][0]
+            record=getTweetInfoFromDB(str(id))
+            print(record)
+            txt=record[0].encode('ascii', 'ignore')+b", "
+            txt+=record[1].encode('ascii','ignore')
+            txt+=b", "
+            txt+=str(record[2]).encode('ascii','ignore')
+            txt+=b" \n"
+            f.write(txt)
+
+#--------------------------------------------------------------   
+
+def getTweetInfoFromDB(id_str):
+    dbase = sqlite3.connect(DBName)
+    cur = dbase.cursor()
+    try:
+        cur.execute('SELECT tweet,ctime, rtCnt FROM newsTbl WHERE id_str = ?',(id_str,))
+        record = cur.fetchone()
+        if not record is None:
+            return record
+    except sqlite3.Error as err:
+        log.error('Error selecting the tweet associated with tweet id {0}: {1}'.format(id_str, err))
+    return
+
+#--------------------------------------------------------------
 
     '''prints the top 10 words per each cluster''' 
 
