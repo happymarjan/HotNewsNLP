@@ -40,6 +40,7 @@ tweetcleaned='tweetcleaned.txt'
 kmeansClustered = 'kmeansClustered.txt'
 clusterFeatures = 'kmeansclusterFeatures.txt'
 tweetsExtracted = 'tweetsExtracted.txt'
+top30TweetsPerCluster ='top30TweetsPerCluster.txt'
 finalTweets = 'finalTweets.txt'
 vecSize = 50
 w2vMdlName ='w2vModel'
@@ -135,12 +136,16 @@ def reduceDimentionalityPCA(inputMatrix):
     
 #--------------------------------------------------------------
 
+    '''TSNE dimensionality reduction'''
+    
 def reduceDimentionalityTSNE(inputMatrix):
     tsneModel = TSNE(n_components=2, verbose=1, random_state=0)
     svdOutMatrix = tsneModel.fit_transform(inputMatrix) #(inputSize, 2)
     return svdOutMatrix
 
 #--------------------------------------------------------------
+
+    ''' cluster tweets based on Kmeans'''
 
 def kmeansClustering(tfidfMatrix,useDefaultNumClusters=False):
     global numKmeanClusters
@@ -186,7 +191,31 @@ def getKmeansClustersTextDists():
     
 #--------------------------------------------------------------
 
-def extractTopNews(closestTweetsToCentroid,tfidfDict):
+    '''selects top events(clusters) based on sum of all retweets in that cluster as a feature'''
+
+def selectTopTwoEvents(closestTweetsToCentroid):
+    eventPopularityDict={}
+    for k in closestTweetsToCentroid:
+        sumRetweetsInCluster=0
+        for i,t,d in closestTweetsToCentroid[k][:]:
+            record=getTweetInfoFromDB(str(i))
+            sumRetweetsInCluster+=record[2]
+        eventPopularityDict[k]=(k,sumRetweetsInCluster)
+        
+    topTwoEvents = sorted(eventPopularityDict.values(), key=lambda x:x[1],reverse=True)[:2]
+    print("topTwoEvents")
+    print(type(topTwoEvents))
+    print(len(topTwoEvents))
+    print(topTwoEvents)
+    return topTwoEvents
+    
+#--------------------------------------------------------------           
+               
+    '''extracts top news in a cluster based on its closeness to the cluster centroid.
+       Then for each candidate news uses TF-IDF weights and part of speech tags (POS) 
+       to weight the tweets and rank them.'''
+    
+def extractTopNews(closestTweetsToCentroid,tfidfDict,topTwoEvents):
     extractedTweetsDict={}
     extractedTweetsDictOrdered=collections.OrderedDict()
     tags=['NN','NNS','NNP','NNPS','RB','VB']
@@ -219,26 +248,46 @@ def extractTopNews(closestTweetsToCentroid,tfidfDict):
                 f.write(str(item))
                 f.write('\n')            
     
-    getToppestPerCluster(extractedTweetsDictOrdered)
+    getToppestPerCluster(extractedTweetsDictOrdered,topTwoEvents)
 #--------------------------------------------------------------   
 
-def getToppestPerCluster(extractedTweetsDictOrdered):
-    with open(finalTweets, 'wb') as f:
+    '''gets the selected tweets per cluster and prints them to a file
+       and finally prints the two selected news in finalTweets.txt file.'''
+    
+def getToppestPerCluster(extractedTweetsDictOrdered,topTwoEvents):
+    with open(top30TweetsPerCluster, 'wb') as f:
         f.write(b"Tweet , Time Created , Number of Retweets")
         f.write(b'\n\n')
         for k in extractedTweetsDictOrdered:
-            id,CleansedTweet,avg=extractedTweetsDictOrdered[k][0]
-            record=getTweetInfoFromDB(str(id))
+            i,CleansedTweet,avg=extractedTweetsDictOrdered[k][0]
+            record=getTweetInfoFromDB(str(i))
             print(record)
             txt=record[0].encode('ascii', 'ignore')+b", "
             txt+=record[1].encode('ascii','ignore')
             txt+=b", "
             txt+=str(record[2]).encode('ascii','ignore')
-            txt+=b" \n"
+            txt+=b"\n\n"
+            f.write(txt)
+                     
+    with open(finalTweets, 'wb') as f:
+        f.write(b"Tweet , Time Created , Number of Retweets")
+        f.write(b'\n\n')
+        for event in topTwoEvents:
+            clusterId,numofRetweets = event
+            i,CleansedTweet,avg=extractedTweetsDictOrdered[clusterId][0]
+            record=getTweetInfoFromDB(str(i))
+            print(record)
+            txt=record[0].encode('ascii', 'ignore')+b", "
+            txt+=record[1].encode('ascii','ignore')
+            txt+=b", "
+            txt+=str(record[2]).encode('ascii','ignore')
+            txt+=b"\n\n"
             f.write(txt)
 
 #--------------------------------------------------------------   
-
+    
+    '''gets tweet attributes from database'''
+            
 def getTweetInfoFromDB(id_str):
     dbase = sqlite3.connect(DBName)
     cur = dbase.cursor()
@@ -301,6 +350,8 @@ def LDATopicModeling():
     return cvectorizer,ldaModel,topicMatrix
 
 #--------------------------------------------------------------
+    
+    '''get and prints the most relevant words to a certain word using LDA'''
 
 def getReleventWordstoTopics(cvectorizer,ldaModel,topicMatrix,numRelWords=10):
     topicRelevWords = []
@@ -331,7 +382,6 @@ def plotTSNE(modelName,matrix,entry,topicKeys=None):
     show(plot)
     
 #--------------------------------------------------------------
-
 
 def plotTSNELDA(modelName,matrix,corpus,topicKeys,isKmeans=False):
     title="Tweets visualized using " + modelName
@@ -397,7 +447,8 @@ if __name__=="__main__":
     kMeansLabelsUnique = np.unique(kmeansModel.labels_)
     clusterToTextsDict = getKmeansClustersTextDists()
     getClusterFeatures(tfidfvectorizer,kmeansModel)
-    extractTopNews(clusterToTextsDict,tfidfDict)
+    topTwoEvents=selectTopTwoEvents(clusterToTextsDict)
+    extractTopNews(clusterToTextsDict,tfidfDict,topTwoEvents)
     plotTSNELDA('Kmeans TSNE',tsneKmeans,inputCorpus,kmeansClusters,True)
     #--------------
     
