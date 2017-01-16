@@ -10,5 +10,7 @@ Please run the files with the following order:
 
 - clustering.py which performs feature selection and clustering on the input data.
 
+Final result will be written in finalTweets.txt.
+
 (The code is written in Python 3.)
   
